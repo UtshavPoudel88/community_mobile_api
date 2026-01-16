@@ -1,0 +1,34 @@
+{
+  "name": "community_api",
+  "version": "1.0.0",
+  "description": "Community API Server",
+  "main": "server.js",
+  "author": "Utshav Poudel",
+  "license": "ISC",
+  "type": "commonjs",
+    "scripts": {
+    "start": "set NODE_ENV=development && nodemon server.js",
+    "dev": "nodemon server.js",
+    "test": "node test-api.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "bcryptjs": "^3.0.3",
+    "colors": "^1.4.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "express-fileupload": "^1.5.2",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.0.2",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "nodemon": "^3.1.11",
+    "slugify": "^1.6.6",
+    "xss-clean": "^0.1.4"
+  }
+}
