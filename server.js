@@ -10,134 +10,61 @@ const rateLimit = require("express-rate-limit");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const errorHandler = require("./middleware/errorHandler");
+
 const app = express();
 
-// Load environment variables
+// Load env variables
 dotenv.config({ path: "./config/config.env" });
 
-// Connect to the database
+// Connect to MongoDB
 connectDB();
 
-// Rate limiting
+//  Rate Limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: "Too many requests from this IP, please try again later.",
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  windowMs: 15 * 60 * 1000,
+  max: 100,
 });
 
-// Rate limiter for auth routes (stricter)
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 login attempts per windowMs
-  message: "Too many login attempts, please try again after 15 minutes.",
-  skipSuccessfulRequests: true, // Don't count successful requests
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
 });
 
-// Middleware
-app.use(express.json());
-app.use(morgan("dev")); // Logging middleware
-app.use(cookieParser()); // Cookie parser middleware
+//  Body Parsers
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use(bodyParser.urlencoded({ extended: true }));
 
-// Custom security middleware (compatible with Express v5)
-app.use((req, res, next) => {
-  // Fields that should not be sanitized (emails, URLs, etc.)
-  const skipFields = [
-    "email",
-    "username",
-    "password",
-  ];
+//  STATIC FILES (THIS IS THE FIX)
+// Files inside /public will be accessible directly
+// Example:
+// public/profile_picture/test.jpg
+// URL → http://localhost:3000/profile_picture/test.jpg
 
-  const sanitize = (obj, parentKey = "") => {
-    if (obj && typeof obj === "object") {
-      for (const key in obj) {
-        // Skip sanitization for specific fields
-        if (skipFields.includes(key)) {
-          continue;
-        }
+app.use(express.static(path.join(__dirname, "public")));
 
-        if (typeof obj[key] === "string") {
-          // Prevent NoSQL injection - Remove $ from strings (but keep .)
-          obj[key] = obj[key].replace(/\$/g, "");
+//  Middleware
+app.use(morgan("dev"));
+app.use(cookieParser());
+app.use(helmet());
+app.use(cors({ origin: true, credentials: true }));
+app.use(limiter);
 
-          // Prevent XSS attacks - Only escape HTML in text fields, not emails/URLs
-          if (!obj[key].includes("@") && !obj[key].startsWith("http")) {
-            obj[key] = obj[key].replace(/</g, "&lt;").replace(/>/g, "&gt;");
-          }
-        } else if (typeof obj[key] === "object") {
-          sanitize(obj[key], key);
-        }
-      }
-    }
-    return obj;
-  };
-
-  if (req.body) req.body = sanitize(req.body);
-  // Note: req.params and req.query are read-only in Express v5, so we skip them
-
-  next();
-});
-
-app.use(helmet()); // Security middleware
-app.use(bodyParser.urlencoded({ extended: true })); // Parse URL-encoded bodies
-
-// Configure CORS
-const corsOptions = {
-  origin: function (origin, callback) {
-    const allowedOrigins = process.env.CORS_ORIGIN
-      ? process.env.CORS_ORIGIN.split(",").map(o => o.trim())
-      : [];
-    // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  credentials: true, // Allow cookies
-  optionsSuccessStatus: 200,
-};
-app.use(cors(corsOptions)); // Enable CORS with options
-
-app.use(limiter); // Apply rate limiting to all requests
-app.use(express.static(path.join(__dirname, "public"))); // Serve static files
-
-// // Routes
-// const batchRoutes = require("./routes/batch_route");
-// app.use("/api/v1/batches", batchRoutes);
-
-// const categoryRoutes = require("./routes/category_route");
-// app.use("/api/v1/categories", categoryRoutes);
-
-// Apply stricter rate limiting to login endpoint
+//  Routes
 const customerRoutes = require("./routes/customer");
+
 app.use("/community/customers/login", authLimiter);
 app.use("/community/customers", customerRoutes);
 
-// const itemRoutes = require("./routes/item_route");
-// app.use("/api/v1/items", itemRoutes);
-
-// const commentRoutes = require("./routes/comment_route");
-// app.use("/api/v1/comments", commentRoutes);
-
-// const userRoutes = require("./routes/userRoutes");
-// const productRoutes = require("./routes/productRoutes");
-// const orderRoutes = require("./routes/orderRoutes");
-// const paymentRoutes = require("./routes/paymentRoutes");
-// app.use("/api/v1/users", userRoutes);
-// app.use("/api/v1/products", productRoutes);
-// app.use("/api/v1/orders", orderRoutes);
-// app.use("/api/v1/payments", paymentRoutes);
-
-// Error handling middleware
+//  Error Handler
 app.use(errorHandler);
 
-// Start the server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(
-    `Server running in ${process.env.NODE_ENV} mode on port ${PORT}`.green.bold
-      .underline
-  );
+//  Start Server
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(3000, () => {
+  console.log('Server running on port 3000');
 });
+
