@@ -3,27 +3,25 @@ const asyncHandler = require("../middleware/async");
 const fs = require("fs");
 const path = require("path");
 
-// helper: convert "/profile_picture/file.jpg" -> absolute disk path ".../public/profile_picture/file.jpg"
-const toPublicDiskPath = (publicUrlPath) => {
-  // publicUrlPath expected like "/profile_picture/xyz.jpg"
-  return path.join(__dirname, "..", "public", publicUrlPath);
-};
-
 exports.createCustomer = asyncHandler(async (req, res) => {
   const { name, email, password } = req.body;
 
+  console.log("creating customer with name:", name);
+
+  //check if customer already exists
   const existingEmail = await Customer.findOne({ email });
   if (existingEmail) {
     return res.status(400).json({ message: "Email already exists" });
   }
 
+  //create customer
   const customer = await Customer.create({
     name,
     email,
     password,
-    profilePicture: null,
   });
 
+  //remove password from response
   const customerResponse = customer.toObject();
   delete customerResponse.password;
 
@@ -33,13 +31,14 @@ exports.createCustomer = asyncHandler(async (req, res) => {
   });
 });
 
-exports.loginCustomer = asyncHandler(async (req, res) => {
+exports.loginCustomer = asyncHandler(async (req, res, next) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ message: "Please provide an email and password" });
   }
 
+  // Check for customer
   const customer = await Customer.findOne({ email }).select("+password");
 
   if (!customer || !(await customer.matchPassword(password))) {
@@ -49,83 +48,34 @@ exports.loginCustomer = asyncHandler(async (req, res) => {
   sendTokenResponse(customer, 200, res);
 });
 
-exports.getAllCustomer = asyncHandler(async (req, res) => {
-  const customers = await Customer.find();
-
-  res.status(200).json({
-    success: true,
-    count: customers.length,
-    data: customers,
-  });
-});
-
-// Get current logged-in user profile
-exports.getMe = asyncHandler(async (req, res) => {
-  const customer = await Customer.findById(req.user._id);
-  if (!customer) {
-    return res.status(404).json({ message: "Customer not found" });
-  }
-
-  const customerResponse = customer.toObject();
-  delete customerResponse.password;
-
-  res.status(200).json({
-    success: true,
-    data: {
-      ...customerResponse,
-      photoUrl: customerResponse.profilePicture,
-    },
-  });
-});
-
 exports.updateCustomer = asyncHandler(async (req, res) => {
   const { name, email, password } = req.body;
 
   const customer = await Customer.findById(req.params.id);
+
   if (!customer) {
     return res.status(404).json({ message: "Customer not found" });
   }
 
-  // ✅ Only the logged-in user can update themselves
-  if (req.user._id.toString() !== customer._id.toString()) {
-    return res.status(403).json({ message: "Not authorized to update this customer" });
+  // ✅ FIX: req.params._id -> req.params.id
+  if (customer._id.toString() !== req.params.id.toString()) {
+    return res.status(401).json({ message: "Not authorized to update this customer" });
   }
 
-  // update fields
-  if (name) customer.name = name;
-  if (email) customer.email = email;
+  //update fields
+  customer.name = name || customer.name;
+  customer.email = email || customer.email;
+  customer.password = password || customer.password;
 
-  // If password is provided, set it; pre-save hook will hash it
-  if (password) customer.password = password;
-
-  // Handle profile picture update if file is provided
-  if (req.file) {
-    // delete old image if it exists
-    if (customer.profilePicture) {
-      const oldImagePath = toPublicDiskPath(customer.profilePicture);
-      if (fs.existsSync(oldImagePath)) {
-        try {
-          fs.unlinkSync(oldImagePath);
-        } catch (err) {
-          console.log("Old file deletion error:", err);
-        }
-      }
-    }
-
-    customer.profilePicture = `/profile_picture/${req.file.filename}`;
+  if (password) {
+    customer.password = password;
   }
 
   await customer.save();
 
-  const customerResponse = customer.toObject();
-  delete customerResponse.password;
-
   res.status(200).json({
     success: true,
-    data: {
-      ...customerResponse,
-      photoUrl: customerResponse.profilePicture,
-    },
+    data: customer,
   });
 });
 
@@ -136,24 +86,12 @@ exports.deleteCustomer = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Customer not found" });
   }
 
-  // ✅ Only the logged-in user can delete themselves
-  if (req.user._id.toString() !== customer._id.toString()) {
-    return res.status(403).json({ message: "Not authorized to delete this customer" });
+  // ✅ FIX: req.params._id -> req.params.id
+  if (customer._id.toString() !== req.params.id.toString()) {
+    return res.status(401).json({ message: "Not authorized to delete this customer" });
   }
 
-  // Delete profile picture file if exists
-  if (customer.profilePicture) {
-    const profilePicturePath = toPublicDiskPath(customer.profilePicture);
-    if (fs.existsSync(profilePicturePath)) {
-      try {
-        fs.unlinkSync(profilePicturePath);
-      } catch (err) {
-        console.log("Profile file deletion error:", err);
-      }
-    }
-  }
-
-  await customer.deleteOne();
+  await customer.findByIdAndDelete(req.params.id);
 
   res.status(200).json({
     success: true,
@@ -161,63 +99,54 @@ exports.deleteCustomer = asyncHandler(async (req, res) => {
   });
 });
 
+// ✅ NEW: Upload profile picture (saved into public/item_photos)
 exports.uploadProfilePicture = asyncHandler(async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ message: "Please upload a photo file" });
-  }
+  const customer = await Customer.findById(req.params.id);
 
-  if (!req.user) {
-    return res.status(401).json({ message: "Not authenticated. Please login first." });
-  }
-
-  // If MAX_FILE_UPLOAD isn't set, skip this check
-  if (process.env.MAX_FILE_UPLOAD && req.file.size > Number(process.env.MAX_FILE_UPLOAD)) {
-    return res.status(400).json({
-      message: `Please upload an image less than ${process.env.MAX_FILE_UPLOAD} bytes`,
-    });
-  }
-
-  const customer = await Customer.findById(req.user._id);
   if (!customer) {
     return res.status(404).json({ message: "Customer not found" });
   }
 
-  // Delete old image if it exists
-  if (customer.profilePicture) {
-    const oldImagePath = toPublicDiskPath(customer.profilePicture);
-    if (fs.existsSync(oldImagePath)) {
+  if (!req.file) {
+    return res.status(400).json({ message: "No file uploaded" });
+  }
+
+  // Optional: delete old local file
+  if (customer.profilePicture && customer.profilePicture.startsWith("/public/")) {
+    const oldFilePath = path.join(__dirname, "..", customer.profilePicture);
+    if (fs.existsSync(oldFilePath)) {
       try {
-        fs.unlinkSync(oldImagePath);
-      } catch (err) {
-        console.log("Old file deletion error:", err);
-      }
+        fs.unlinkSync(oldFilePath);
+      } catch (_) {}
     }
   }
 
-  const photoUrl = `/profile_picture/${req.file.filename}`;
-  customer.profilePicture = photoUrl;
+  // Store relative path in DB
+  const relativePath = `/public/item_photos/${req.file.filename}`;
+  customer.profilePicture = relativePath;
+
   await customer.save();
 
-  const customerResponse = customer.toObject();
-  delete customerResponse.password;
+  // Full URL for frontend
+  const fullUrl = `${req.protocol}://${req.get("host")}${relativePath}`;
 
   return res.status(200).json({
     success: true,
     data: {
-      ...customerResponse,
-      photoUrl,
+      profilePicture: relativePath,
+      profilePictureUrl: fullUrl,
     },
-    message: "Profile picture uploaded and updated successfully",
   });
 });
 
 // Get token from model, create cookie and send response
 const sendTokenResponse = (customer, statusCode, res) => {
+  // Create token
   const token = customer.getSignedJwtToken();
 
   const option = {
     expires: new Date(
-      Date.now() + Number(process.env.JWT_COOKIE_EXPIRE) * 24 * 60 * 60 * 1000
+      Date.now() + process.env.JWT_COOKIE_EXPIRE * 24 * 60 * 60 * 1000
     ),
     httpOnly: true,
   };
@@ -226,15 +155,8 @@ const sendTokenResponse = (customer, statusCode, res) => {
     option.secure = true;
   }
 
-  const customerResponse = customer.toObject();
-  delete customerResponse.password;
-
   res.status(statusCode).cookie("token", token, option).json({
     success: true,
-    token,
-    data: {
-      ...customerResponse,
-      photoUrl: customerResponse.profilePicture,
-    },
+    token, 
   });
 };
