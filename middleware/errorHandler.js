@@ -42,6 +42,21 @@ const errorHandler = (err, req, res, next) => {
     });
   }
 
+  // Multer errors (file upload)
+  if (err.name === "MulterError") {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+    });
+  }
+
+  if (err.message === "Only image files are allowed") {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+    });
+  }
+
   // Default error - hide stack trace in production
   res.status(err.statusCode || 500).json({
     success: false,

@@ -91,7 +91,7 @@ exports.deleteCustomer = asyncHandler(async (req, res) => {
     return res.status(401).json({ message: "Not authorized to delete this customer" });
   }
 
-  await customer.findByIdAndDelete(req.params.id);
+  await Customer.findByIdAndDelete(req.params.id);
 
   res.status(200).json({
     success: true,
@@ -113,7 +113,11 @@ exports.uploadProfilePicture = asyncHandler(async (req, res) => {
 
   // Optional: delete old local file
   if (customer.profilePicture && customer.profilePicture.startsWith("/public/")) {
-    const oldFilePath = path.join(__dirname, "..", customer.profilePicture);
+    const oldFilePath = path.join(
+      __dirname,
+      "..",
+      customer.profilePicture.replace(/^\/+/, "")
+    );
     if (fs.existsSync(oldFilePath)) {
       try {
         fs.unlinkSync(oldFilePath);
