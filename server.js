@@ -90,8 +90,11 @@ app.use("/public", express.static(path.join(__dirname, "public")));
 // Customer routes
 const customerRoutes = require("./routes/customer_route");
 
-// ✅ NEW: Community routes
+// ✅ Community routes
 const communityRoutes = require("./routes/community_route");
+
+// ✅ NEW: Post routes
+const postRoutes = require("./routes/post_route");
 
 // Apply stricter limiter only to login route
 app.use("/community/customers/login", authLimiter);
@@ -99,8 +102,11 @@ app.use("/community/customers/login", authLimiter);
 // Customer endpoints
 app.use("/community/customers", customerRoutes);
 
-// ✅ NEW: Community endpoints
+// Community endpoints
 app.use("/community/communities", communityRoutes);
+
+// ✅ NEW: Post endpoints
+app.use("/community/posts", postRoutes);
 
 // =================== ERROR HANDLER ===================
 app.use(errorHandler);
