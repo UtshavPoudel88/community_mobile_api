@@ -125,8 +125,11 @@ exports.uploadProfilePicture = asyncHandler(async (req, res) => {
     }
   }
 
-  // Store relative path in DB
-  const relativePath = `/public/item_photos/${req.file.filename}`;
+  // Store relative path in DB based on actual upload destination
+  const publicDir = path.join(__dirname, "..", "public");
+  const relativeFromPublic = path.relative(publicDir, req.file.path);
+  const normalizedRelative = relativeFromPublic.split(path.sep).join("/");
+  const relativePath = `/public/${normalizedRelative}`;
   customer.profilePicture = relativePath;
 
   await customer.save();

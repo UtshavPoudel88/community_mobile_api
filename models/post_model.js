@@ -17,30 +17,16 @@ const PostSchema = new mongoose.Schema({
     trim: true,
     maxlength: 1000,
   },
-  likes: [
-    {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Customer",
-    },
-  ],
-  dislikes: [
-    {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Customer",
-    },
-  ],
-  likeCount: {
-    type: Number,
-    default: 0,
-  },
-  dislikeCount: {
-    type: Number,
-    default: 0,
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
+
+  // NEW: media support
+  mediaUrl: { type: String, default: "" },
+  mediaType: { type: String, enum: ["image", "video", ""], default: "" },
+
+  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "Customer" }],
+  dislikes: [{ type: mongoose.Schema.Types.ObjectId, ref: "Customer" }],
+  likeCount: { type: Number, default: 0 },
+  dislikeCount: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now },
 });
 
 PostSchema.index({ communityId: 1, createdAt: -1 });

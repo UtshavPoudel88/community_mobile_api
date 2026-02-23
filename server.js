@@ -24,7 +24,7 @@ connectDB();
 // Global rate limiter
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Max 100 requests per window
+  max: 1000, // Higher limit for non-production
   message: "Too many requests from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
@@ -33,9 +33,9 @@ const limiter = rateLimit({
 // Rate limiter for auth routes (login)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Max 5 login attempts
+  max: 20, // Higher limit for non-production
   message: "Too many login attempts, please try again after 15 minutes.",
-  skipSuccessfulRequests: true, // Only count failed attempts
+  skipSuccessfulRequests: true,
 });
 
 app.use(express.json()); // Parse JSON
@@ -60,9 +60,9 @@ app.use((req, res, next) => {
         if (skipFields.includes(key)) continue;
 
         if (typeof obj[key] === "string") {
-          obj[key] = obj[key].replace(/\$/g, ""); // Prevent NoSQL injection
+          obj[key] = obj[key].replace(/\$/g, "");
           if (!obj[key].includes("@") && !obj[key].startsWith("http")) {
-            obj[key] = obj[key].replace(/</g, "&lt;").replace(/>/g, "&gt;"); // Prevent XSS
+            obj[key] = obj[key].replace(/</g, "&lt;").replace(/>/g, "&gt;");
           }
         } else if (typeof obj[key] === "object") {
           sanitize(obj[key]);
@@ -78,11 +78,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// Apply global rate limiter
-app.use(limiter);
+// Apply global rate limiter only outside development
+if (process.env.NODE_ENV !== "development") {
+  app.use(limiter);
+}
 
 // ✅ Serve static files
-// Only change here: expose public folder at /public/...
 app.use("/public", express.static(path.join(__dirname, "public")));
 
 // =================== ROUTES ===================
@@ -93,7 +94,7 @@ const customerRoutes = require("./routes/customer_route");
 // ✅ Community routes
 const communityRoutes = require("./routes/community_route");
 
-// ✅ NEW: Post routes
+// ✅ Post routes
 const postRoutes = require("./routes/post_route");
 
 // Apply stricter limiter only to login route
@@ -105,7 +106,7 @@ app.use("/community/customers", customerRoutes);
 // Community endpoints
 app.use("/community/communities", communityRoutes);
 
-// ✅ NEW: Post endpoints
+// Post endpoints
 app.use("/community/posts", postRoutes);
 
 // =================== ERROR HANDLER ===================
