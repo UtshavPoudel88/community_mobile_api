@@ -1,6 +1,7 @@
 const asyncHandler = require("../middleware/async");
 const Post = require("../models/post_model");
 const Community = require("../models/community_model");
+const UserCommunity = require("../models/user_community_model");
 
 const resolvePostDisplayName = (post, currentUserId) => {
   const data = post && typeof post.toObject === "function" ? post.toObject() : post;
@@ -55,8 +56,15 @@ exports.createPost = asyncHandler(async (req, res) => {
   let finalMediaType = "";
 
   if (req.file) {
+    // Only allow images, reject videos
+    if (req.file.mimetype && !req.file.mimetype.startsWith("image/")) {
+      return res.status(400).json({
+        success: false,
+        message: "Only image files are allowed. Videos are not supported.",
+      });
+    }
     relativePath = `/public/post_media/${req.file.filename}`;
-    finalMediaType = mediaType === "video" ? "video" : "image";
+    finalMediaType = "image"; // Always set to image, no videos allowed
   }
 
   const post = await Post.create({
@@ -73,9 +81,20 @@ exports.createPost = asyncHandler(async (req, res) => {
 // GET /community/posts/community/:id (protected)
 exports.listPostsByCommunity = asyncHandler(async (req, res) => {
   const communityId = req.params.id;
+  const userId = req.user._id;
+
+  // Check if user has joined this community
+  const membership = await UserCommunity.findOne({ userId, communityId });
+  if (!membership) {
+    return res.status(403).json({
+      success: false,
+      message: "You must join this community to view its posts",
+    });
+  }
 
   const posts = await Post.find({ communityId })
-    .populate("userId", "name userName username authorName")
+    .populate("userId", "name userName username authorName profilePicture")
+    .populate("communityId", "title image")
     .sort({ createdAt: -1 });
 
   const responsePosts = posts.map((post) => resolvePostDisplayName(post, req.user && req.user._id));
@@ -87,8 +106,40 @@ exports.listPostsByUser = asyncHandler(async (req, res) => {
   const userId = req.params.id;
 
   const posts = await Post.find({ userId })
-    .populate("userId", "name userName username authorName")
+    .populate("userId", "name userName username authorName profilePicture")
+    .populate("communityId", "title image")
     .sort({ createdAt: -1 });
+
+  const responsePosts = posts.map((post) => resolvePostDisplayName(post, req.user && req.user._id));
+  res.status(200).json({ success: true, data: responsePosts });
+});
+
+// GET /community/posts (protected) - Get all posts from communities user has joined (or all posts if admin)
+exports.listAllPosts = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+  const adminEmails = process.env.ADMIN_EMAILS
+    ? process.env.ADMIN_EMAILS.split(",").map((e) => e.trim().toLowerCase())
+    : [];
+  const isAdmin = req.user.role === "admin" || (req.user.email && adminEmails.includes(req.user.email.toLowerCase()));
+
+  let posts;
+
+  if (isAdmin) {
+    // Admins can see all posts from all communities
+    posts = await Post.find()
+      .populate("userId", "name email userName username authorName profilePicture")
+      .populate("communityId", "title image")
+      .sort({ createdAt: -1 });
+  } else {
+    // Regular users only see posts from communities they've joined
+    const memberships = await UserCommunity.find({ userId });
+    const joinedCommunityIds = memberships.map((m) => m.communityId);
+
+    posts = await Post.find({ communityId: { $in: joinedCommunityIds } })
+      .populate("userId", "name email userName username authorName profilePicture")
+      .populate("communityId", "title image")
+      .sort({ createdAt: -1 });
+  }
 
   const responsePosts = posts.map((post) => resolvePostDisplayName(post, req.user && req.user._id));
   res.status(200).json({ success: true, data: responsePosts });
@@ -124,14 +175,20 @@ exports.updatePost = asyncHandler(async (req, res) => {
 // DELETE /community/posts/:id (protected)
 exports.deletePost = asyncHandler(async (req, res) => {
   const postId = req.params.id;
-
   const post = await Post.findById(postId);
+
   if (!post) {
     return res.status(404).json({ success: false, message: "Post not found" });
   }
 
-  if (post.userId.toString() !== req.user._id.toString()) {
-    return res.status(401).json({ success: false, message: "Not authorized" });
+  const adminEmails = process.env.ADMIN_EMAILS
+    ? process.env.ADMIN_EMAILS.split(",").map((e) => e.trim().toLowerCase())
+    : [];
+  const isAdmin = req.user.role === "admin" || (req.user.email && adminEmails.includes(req.user.email.toLowerCase()));
+  const isOwner = post.userId.toString() === req.user._id.toString();
+
+  if (!isOwner && !isAdmin) {
+    return res.status(401).json({ success: false, message: "Not authorized to delete this post" });
   }
 
   await post.deleteOne();

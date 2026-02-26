@@ -1,4 +1,6 @@
 const Customer = require("../models/customer_model");
+const Post = require("../models/post_model");
+const UserCommunity = require("../models/user_community_model");
 const asyncHandler = require("../middleware/async");
 const fs = require("fs");
 const path = require("path");
@@ -14,11 +16,18 @@ exports.createCustomer = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Email already exists" });
   }
 
+  // Determine role (admin vs user) based on ADMIN_EMAILS env list
+  const adminEmails = process.env.ADMIN_EMAILS
+    ? process.env.ADMIN_EMAILS.split(",").map((e) => e.trim().toLowerCase())
+    : [];
+  const role = adminEmails.includes(email.toLowerCase()) ? "admin" : "user";
+
   //create customer
   const customer = await Customer.create({
     name,
     email,
     password,
+    role,
   });
 
   //remove password from response
@@ -49,7 +58,7 @@ exports.loginCustomer = asyncHandler(async (req, res, next) => {
 });
 
 exports.updateCustomer = asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, role } = req.body;
 
   const customer = await Customer.findById(req.params.id);
 
@@ -57,18 +66,25 @@ exports.updateCustomer = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Customer not found" });
   }
 
-  // ✅ FIX: req.params._id -> req.params.id
-  if (customer._id.toString() !== req.params.id.toString()) {
+  // Allow admins to update any customer, users can only update themselves
+  if (req.user.role !== "admin" && customer._id.toString() !== req.user._id.toString()) {
     return res.status(401).json({ message: "Not authorized to update this customer" });
+  }
+
+  // Only admins can update role
+  if (role !== undefined && req.user.role !== "admin") {
+    return res.status(401).json({ message: "Not authorized to update role" });
   }
 
   //update fields
   customer.name = name || customer.name;
   customer.email = email || customer.email;
-  customer.password = password || customer.password;
-
   if (password) {
     customer.password = password;
+  }
+  // Only allow role update if user is admin
+  if (role !== undefined && req.user.role === "admin") {
+    customer.role = role;
   }
 
   await customer.save();
@@ -86,16 +102,74 @@ exports.deleteCustomer = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Customer not found" });
   }
 
-  // ✅ FIX: req.params._id -> req.params.id
-  if (customer._id.toString() !== req.params.id.toString()) {
+  // Allow admins to delete any customer, users can only delete themselves
+  if (req.user.role !== "admin" && customer._id.toString() !== req.user._id.toString()) {
     return res.status(401).json({ message: "Not authorized to delete this customer" });
   }
 
-  await Customer.findByIdAndDelete(req.params.id);
+  const customerId = customer._id;
+
+  // Delete all posts by this user
+  const posts = await Post.find({ userId: customerId });
+  
+  // Delete post media files
+  for (const post of posts) {
+    if (post.mediaUrl && post.mediaUrl.startsWith("/public/")) {
+      const mediaPath = path.join(__dirname, "..", post.mediaUrl.replace(/^\/+/, ""));
+      if (fs.existsSync(mediaPath)) {
+        try {
+          fs.unlinkSync(mediaPath);
+        } catch (err) {
+          console.error(`Failed to delete post media: ${mediaPath}`, err);
+        }
+      }
+    }
+  }
+  
+  // Delete all posts from database
+  await Post.deleteMany({ userId: customerId });
+
+  // Remove user's ID from likes/dislikes arrays in all posts and update counts
+  // First, find posts where user has liked or disliked
+  const postsWithReactions = await Post.find({
+    $or: [{ likes: customerId }, { dislikes: customerId }],
+  });
+
+  // Update each post to remove user and recalculate counts
+  for (const post of postsWithReactions) {
+    const hadLike = post.likes.includes(customerId);
+    const hadDislike = post.dislikes.includes(customerId);
+    
+    post.likes = post.likes.filter((id) => id.toString() !== customerId.toString());
+    post.dislikes = post.dislikes.filter((id) => id.toString() !== customerId.toString());
+    
+    if (hadLike) post.likeCount = Math.max(0, post.likeCount - 1);
+    if (hadDislike) post.dislikeCount = Math.max(0, post.dislikeCount - 1);
+    
+    await post.save();
+  }
+
+  // Remove user from all communities
+  await UserCommunity.deleteMany({ userId: customerId });
+
+  // Delete profile picture file if exists
+  if (customer.profilePicture && customer.profilePicture.startsWith("/public/")) {
+    const profilePath = path.join(__dirname, "..", customer.profilePicture.replace(/^\/+/, ""));
+    if (fs.existsSync(profilePath)) {
+      try {
+        fs.unlinkSync(profilePath);
+      } catch (err) {
+        console.error(`Failed to delete profile picture: ${profilePath}`, err);
+      }
+    }
+  }
+
+  // Finally, delete the customer
+  await Customer.findByIdAndDelete(customerId);
 
   res.status(200).json({
     success: true,
-    message: "Customer deleted successfully",
+    message: "Customer and all related data deleted successfully",
   });
 });
 

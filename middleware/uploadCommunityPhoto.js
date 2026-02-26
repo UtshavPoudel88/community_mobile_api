@@ -2,7 +2,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
-const uploadDir = path.join(__dirname, "..", "public", "post_media");
+const uploadDir = path.join(__dirname, "..", "public", "community_photos");
 
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -12,7 +12,7 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname || "").toLowerCase();
-    cb(null, `post_${Date.now()}${ext}`);
+    cb(null, `community_${Date.now()}${ext}`);
   },
 });
 
@@ -35,19 +35,15 @@ const fileFilter = (req, file, cb) => {
     ".webp",
   ]);
 
-  if (imageMimes.includes(mime)) {
+  if (imageMimes.includes(mime) || imageExts.has(ext)) {
     return cb(null, true);
   }
 
-  if (imageExts.has(ext)) {
-    return cb(null, true);
-  }
-
-  cb(new Error("Only image files are allowed. Videos are not supported."), false);
+  cb(new Error("Only image files are allowed (JPG, PNG, GIF, WEBP)"), false);
 };
 
 module.exports = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });

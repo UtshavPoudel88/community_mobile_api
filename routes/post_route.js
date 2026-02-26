@@ -7,6 +7,7 @@ const {
   createPost,
   listPostsByCommunity,
   listPostsByUser,
+  listAllPosts,
   updatePost,
   deletePost,
   reactToPost,
@@ -15,8 +16,11 @@ const {
 // POST /community/posts (protected)
 router.post("/", protect, upload.single("media"), createPost);
 
-// GET /community/posts/community/:id (public)
-router.get("/community/:id", listPostsByCommunity);
+// GET /community/posts (protected) - Get all posts
+router.get("/", protect, listAllPosts);
+
+// GET /community/posts/community/:id (protected) - User must be member of community
+router.get("/community/:id", protect, listPostsByCommunity);
 
 // GET /community/posts/user/:id (protected)
 router.get("/user/:id", protect, listPostsByUser);

@@ -32,6 +32,13 @@ const CustomerSchema = new mongoose.Schema({
     default: "",
   },
 
+  // ✅ Role-based access (user or admin)
+  role: {
+    type: String,
+    enum: ["user", "admin"],
+    default: "user",
+  },
+
   createdAt: {
     type: Date,
     default: Date.now,

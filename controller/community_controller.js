@@ -1,15 +1,16 @@
 const asyncHandler = require("../middleware/async");
 const Community = require("../models/community_model");
 const UserCommunity = require("../models/user_community_model");
+const path = require("path");
 
 // POST /community/communities (protected)
 exports.createCommunity = asyncHandler(async (req, res) => {
-  const { title, image, description } = req.body;
+  const { title, description } = req.body;
 
-  if (!title || !image) {
+  if (!title) {
     return res.status(400).json({
       success: false,
-      message: "title and image are required",
+      message: "title is required",
     });
   }
 
@@ -21,9 +22,27 @@ exports.createCommunity = asyncHandler(async (req, res) => {
     });
   }
 
+  // Handle image: either from file upload or URL
+  let imagePath = "";
+  if (req.file) {
+    // File was uploaded, use the relative path
+    const publicDir = path.join(__dirname, "..", "public");
+    const relativeFromPublic = path.relative(publicDir, req.file.path);
+    const normalizedRelative = relativeFromPublic.split(path.sep).join("/");
+    imagePath = `/public/${normalizedRelative}`;
+  } else if (req.body.image) {
+    // URL was provided
+    imagePath = req.body.image;
+  } else {
+    return res.status(400).json({
+      success: false,
+      message: "image (file or URL) is required",
+    });
+  }
+
   const community = await Community.create({
     title,
-    image,
+    image: imagePath,
     description: description || "",
   });
 
@@ -34,6 +53,43 @@ exports.createCommunity = asyncHandler(async (req, res) => {
 exports.listAllCommunities = asyncHandler(async (req, res) => {
   const communities = await Community.find().sort({ createdAt: -1 });
   res.status(200).json({ success: true, data: communities });
+});
+
+// PUT /community/communities/:id (admin)
+exports.updateCommunity = asyncHandler(async (req, res) => {
+  const { title, image, description } = req.body;
+  const community = await Community.findById(req.params.id);
+
+  if (!community) {
+    return res.status(404).json({
+      success: false,
+      message: "Community not found",
+    });
+  }
+
+  if (title) community.title = title;
+  if (image) community.image = image;
+  if (description !== undefined) community.description = description;
+
+  await community.save();
+
+  res.status(200).json({ success: true, data: community });
+});
+
+// DELETE /community/communities/:id (admin)
+exports.deleteCommunity = asyncHandler(async (req, res) => {
+  const community = await Community.findById(req.params.id);
+
+  if (!community) {
+    return res.status(404).json({
+      success: false,
+      message: "Community not found",
+    });
+  }
+
+  await community.deleteOne();
+
+  res.status(200).json({ success: true, message: "Community deleted" });
 });
 
 // POST /community/communities/:id/join (protected)

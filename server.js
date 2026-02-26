@@ -45,7 +45,11 @@ app.use(cookieParser()); // Cookies
 app.use(helmet()); // Security headers
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : [],
+    origin: process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim())
+      : process.env.NODE_ENV === "development"
+      ? ["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"]
+      : [],
     credentials: true,
   })
 );
@@ -84,7 +88,16 @@ if (process.env.NODE_ENV !== "development") {
 }
 
 // ✅ Serve static files
-app.use("/public", express.static(path.join(__dirname, "public")));
+// Allow images to be loaded from the web app running on a different port (3001)
+app.use(
+  "/public",
+  (req, res, next) => {
+    // Fix CORP (Cross-Origin-Resource-Policy) issue for images
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    next();
+  },
+  express.static(path.join(__dirname, "public"))
+);
 
 // =================== ROUTES ===================
 
